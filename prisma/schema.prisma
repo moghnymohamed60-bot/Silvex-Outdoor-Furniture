@@ -1,0 +1,470 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  STAFF
+  CUSTOMER
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY_FOR_SHIPMENT
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  ORDER_FULFILLMENT
+  RESTOCK
+  ADJUSTMENT
+  RETURN
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         Role      @default(CUSTOMER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  addresses    Address[]
+  orders       Order[]
+  reviews      Review[]
+  wishlist     Wishlist?
+  cart         Cart?
+  auditLogs    AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Address {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title             String?  // e.g. "Villa Palm Terrace", "Main Residence"
+  firstName         String
+  lastName          String
+  company           String?
+  street            String
+  apartment         String?
+  city              String
+  state             String
+  postalCode        String
+  country           String   @default("US")
+  phone             String?
+  isDefaultShipping Boolean  @default(false)
+  isDefaultBilling  Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  orders            Order[]
+
+  @@index([userId])
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  image       String?
+  sortOrder   Int       @default(0)
+  parentId    String?
+  parent      Category?  @relation("SubCategories", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("SubCategories")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@index([slug])
+}
+
+model OutdoorSpace {
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique // garden, terrace, poolside, balcony, rooftop, outdoor-dining, hospitality
+  headline         String
+  description      String
+  heroImage        String
+  inspirationStory String?  @db.Text
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  products         Product[]
+
+  @@index([slug])
+}
+
+model Collection {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  tagline     String?
+  description String?   @db.Text
+  heroImage   String
+  isFeatured  Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@index([slug])
+}
+
+model Product {
+  id               String        @id @default(uuid())
+  title            String
+  slug             String        @unique
+  sku              String        @unique
+  shortDescription String
+  description      String        @db.Text
+  basePrice        Float
+  compareAtPrice   Float?
+  costPrice        Float?
+  status           ProductStatus @default(ACTIVE)
+  isFeatured       Boolean       @default(false)
+  isBestSeller     Boolean       @default(false)
+  isNewArrival     Boolean       @default(false)
+  
+  categoryId       String
+  category         Category      @relation(fields: [categoryId], references: [id])
+  
+  outdoorSpaceId   String?
+  outdoorSpace     OutdoorSpace? @relation(fields: [outdoorSpaceId], references: [id], onDelete: SetNull)
+  
+  collectionId     String?
+  collection       Collection?   @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  images           ProductImage[]
+  variants         ProductVariant[]
+  specification    ProductSpecification?
+  reviews          Review[]
+  orderItems       OrderItem[]
+  cartItems        CartItem[]
+  wishlistItems    WishlistItem[]
+
+  @@index([slug])
+  @@index([sku])
+  @@index([categoryId])
+  @@index([outdoorSpaceId])
+  @@index([collectionId])
+  @@index([status])
+}
+
+model ProductImage {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url         String
+  altText     String?
+  isPrimary   Boolean  @default(false)
+  isLifestyle Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([productId])
+}
+
+model ProductSpecification {
+  id                      String   @id @default(uuid())
+  productId               String   @unique
+  product                 Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  material                String   // Grade-A Teak, Marine Aluminum, All-Weather Weave, etc.
+  frameMaterial           String   // Rust-proof Powder Coated Aluminum, Solid Teak
+  cushionFabric           String?  // Sunbrella® High-Performance Outdoor Fabric
+  cushionFoam             String?  // QuickDry® Reticulated Foam
+  weatherResistance       String   // UV 50+, Water Repellent, Marine Grade Rust-Proof
+  uvResistanceRating      String   // UV-50+ / 2000+ Lightfast hours
+  waterResistanceLevel    String   // Hydrophobic Quick-Dry
+  rustResistance          String   // Marine Grade 100% Rust-Proof
+  dimensions              String   // e.g. "86\"W x 38\"D x 29\"H"
+  weight                  String   // e.g. "78 lbs (35.4 kg)"
+  maxWindResistance       String?  // e.g. "Up to 55 mph"
+  maintenanceInstructions String?  @db.Text
+  winterCareGuide         String?  @db.Text
+  recommendedSpace        String?  // Garden, Terrace, Poolside, Seaside
+  warrantyYears           Int      @default(5)
+  assemblyRequired        Boolean  @default(false)
+  assemblyTimeMinutes     Int?     @default(0)
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model ProductVariant {
+  id              String   @id @default(uuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku             String   @unique
+  title           String   // e.g. "Sandstone Sunbrella / Natural Teak"
+  colorName       String
+  colorHex        String
+  materialOption  String?
+  sizeOption      String?
+  priceAdjustment Float    @default(0.0)
+  inventoryCount  Int      @default(10)
+  reservedCount   Int      @default(0)
+  lowStockAlert   Int      @default(3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cartItems       CartItem[]
+  orderItems      OrderItem[]
+  movements       InventoryMovement[]
+
+  @@index([productId])
+  @@index([sku])
+}
+
+model InventoryMovement {
+  id          String                @id @default(uuid())
+  variantId   String
+  variant     ProductVariant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  type        InventoryMovementType
+  quantity    Int                   // positive for additions, negative for deductions
+  reason      String
+  referenceId String?               // e.g. Order ID
+  actorEmail  String?
+  createdAt   DateTime              @default(now())
+
+  @@index([variantId])
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String?    @unique
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String?    @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items     CartItem[]
+
+  @@index([sessionId])
+  @@index([userId])
+}
+
+model CartItem {
+  id        String         @id @default(uuid())
+  cartId    String
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int            @default(1)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([cartId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Wishlist {
+  id        String         @id @default(uuid())
+  userId    String         @unique
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  items     WishlistItem[]
+}
+
+model WishlistItem {
+  id         String   @id @default(uuid())
+  wishlistId String
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([wishlistId, productId])
+  @@index([wishlistId])
+  @@index([productId])
+}
+
+model Order {
+  id              String        @id @default(uuid())
+  orderNumber     String        @unique
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email           String
+  phone           String?
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  currency        String        @default("USD")
+  
+  subtotal        Float
+  discountAmount  Float         @default(0.0)
+  shippingAmount  Float         @default(0.0)
+  taxAmount       Float         @default(0.0)
+  totalAmount     Float
+
+  shippingMethod  String        @default("White Glove Delivery & Assembly")
+  trackingNumber  String?
+  carrier         String?       @default("Silvex Luxury Logistics")
+  estimatedArrival DateTime?
+  customerNotes   String?       @db.Text
+
+  shippingAddressId String?
+  shippingAddress   Address?    @relation(fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  rawAddressJson    String?     @db.Text
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           OrderItem[]
+  payments        Payment[]
+
+  @@index([orderNumber])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String         @id @default(uuid())
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  title       String
+  variantTitle String
+  sku         String
+  price       Float
+  quantity    Int
+  totalPrice  Float
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  orderId               String
+  order                 Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stripePaymentIntentId String?       @unique
+  stripeChargeId        String?
+  amount                Float
+  currency              String        @default("USD")
+  status                PaymentStatus @default(PENDING)
+  paymentMethod         String        @default("card")
+  rawResponseJson       String?       @db.Text
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([stripePaymentIntentId])
+}
+
+model Review {
+  id                 String       @id @default(uuid())
+  productId          String
+  product            Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating             Int          // 1 - 5
+  title              String
+  comment            String       @db.Text
+  isVerifiedPurchase Boolean      @default(true)
+  status             ReviewStatus @default(APPROVED)
+  outdoorContext     String?      // e.g. "Poolside Patio", "Rooftop Terrace"
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([productId])
+  @@index([userId])
+  @@index([status])
+}
+
+model Discount {
+  id             String       @id @default(uuid())
+  code           String       @unique
+  description    String?
+  type           DiscountType @default(PERCENTAGE)
+  value          Float        // e.g. 15 for 15% or 150 for $150
+  minimumOrder   Float        @default(0.0)
+  maxDiscount    Float?
+  usageLimit     Int?
+  usedCount      Int          @default(0)
+  isActive       Boolean      @default(true)
+  startsAt       DateTime     @default(now())
+  expiresAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([code])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   // e.g. "PRODUCT_CREATE", "ORDER_STATUS_UPDATE"
+  entity     String   // e.g. "Product", "Order"
+  entityId   String?
+  details    String?  @db.Text
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+}
