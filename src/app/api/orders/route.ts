@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/data/mock-db';
+import { sendOrderConfirmationEmail } from '@/lib/email/service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,8 +49,16 @@ export async function POST(request: NextRequest) {
       items: body.items,
     });
 
+    // Send confirmation email asynchronously
+    try {
+      await sendOrderConfirmationEmail(order);
+    } catch (emailErr) {
+      console.error('[EmailService] Order confirmation email error:', emailErr);
+    }
+
     return NextResponse.json({ success: true, data: order }, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

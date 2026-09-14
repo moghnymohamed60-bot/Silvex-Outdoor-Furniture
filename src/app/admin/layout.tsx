@@ -14,6 +14,7 @@ import {
   Star,
   Tag,
   BarChart3,
+  Mail,
   Settings,
   ExternalLink,
   ShieldCheck,
@@ -31,6 +32,7 @@ const ADMIN_LINKS = [
   { name: 'Reviews', href: '/admin/reviews', icon: Star },
   { name: 'Discounts', href: '/admin/discounts', icon: Tag },
   { name: 'Outdoor Analytics', href: '/admin/analytics', icon: BarChart3 },
+  { name: 'Email Studio', href: '/admin/emails', icon: Mail },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
