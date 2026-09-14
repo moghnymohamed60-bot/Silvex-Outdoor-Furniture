@@ -18,6 +18,10 @@ import {
   Info,
   X,
   Check,
+  Key,
+  ShieldCheck,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 export default function AdminEmailStudioPage() {
@@ -32,14 +36,36 @@ export default function AdminEmailStudioPage() {
   const [isLoadingLogs, setIsLoadingLogs] = useState(true);
   const [selectedLogForModal, setSelectedLogForModal] = useState<any>(null);
 
-  const fetchLogs = async () => {
+  // Outbound SMTP live setup state
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [configProvider, setConfigProvider] = useState<'gmail' | 'custom_smtp' | 'resend'>('gmail');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [resendApiKey, setResendApiKey] = useState('');
+  const [isVerifyingConfig, setIsVerifyingConfig] = useState(false);
+  const [configMessage, setConfigMessage] = useState('');
+  const [configError, setConfigError] = useState('');
+
+  const fetchLogsAndConfig = async () => {
     try {
       setIsLoadingLogs(true);
-      const res = await fetch('/api/admin/emails');
-      const json = await res.json();
-      if (json.success) {
-        setLogs(json.data || []);
-        setProviderInfo(json.providerInfo || null);
+      const [logsRes, configRes] = await Promise.all([
+        fetch('/api/admin/emails'),
+        fetch('/api/admin/emails/config'),
+      ]);
+      const logsJson = await logsRes.json();
+      const configJson = await configRes.json();
+
+      if (logsJson.success) {
+        setLogs(logsJson.data || []);
+        setProviderInfo(logsJson.providerInfo || null);
+      }
+      if (configJson.success && configJson.data) {
+        if (configJson.data.smtpUser) setSmtpUser(configJson.data.smtpUser);
+        if (configJson.data.smtpHost) setSmtpHost(configJson.data.smtpHost);
+        if (configJson.data.smtpPort) setSmtpPort(configJson.data.smtpPort);
       }
     } catch (e) {
       console.error(e);
@@ -49,8 +75,44 @@ export default function AdminEmailStudioPage() {
   };
 
   useEffect(() => {
-    fetchLogs();
+    fetchLogsAndConfig();
   }, []);
+
+  const handleSaveAndVerifyConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsVerifyingConfig(true);
+    setConfigMessage('');
+    setConfigError('');
+
+    try {
+      const res = await fetch('/api/admin/emails/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: configProvider,
+          smtpService: configProvider === 'gmail' ? 'gmail' : undefined,
+          smtpHost: configProvider === 'custom_smtp' ? smtpHost : undefined,
+          smtpPort: configProvider === 'custom_smtp' ? smtpPort : undefined,
+          smtpUser,
+          smtpPass,
+          resendApiKey,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setConfigMessage(data.message || 'SMTP connected and verified!');
+        fetchLogsAndConfig();
+        setTimeout(() => setShowConfigModal(false), 2000);
+      } else {
+        setConfigError(data.error || 'Verification failed. Please check credentials.');
+      }
+    } catch (err: any) {
+      setConfigError(err.message || 'Failed to connect to email server.');
+    } finally {
+      setIsVerifyingConfig(false);
+    }
+  };
 
   const handleSendTest = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -69,7 +131,7 @@ export default function AdminEmailStudioPage() {
       const data = await res.json();
       if (data.success) {
         setSendResult(data);
-        fetchLogs();
+        fetchLogsAndConfig();
       } else {
         alert(data.error || 'Failed to dispatch test email.');
       }
@@ -87,17 +149,25 @@ export default function AdminEmailStudioPage() {
         <div>
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-silvex-600 font-bold mb-1">
             <Mail className="w-3.5 h-3.5" />
-            Automated Email Dispatch Engine
+            Outbound Email Delivery & Dispatch Studio
           </div>
           <h1 className="font-serif text-2xl sm:text-3xl font-bold text-stone-900 dark:text-white">
             Email Notification Studio
           </h1>
           <p className="text-xs text-stone-500">
-            Real SMTP email dispatch with automated zero-config test inboxes and live web preview.
+            Real SMTP email dispatch with automated zero-config sandbox and physical inbox delivery.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowConfigModal(true)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-100 transition-colors"
+          >
+            <Key className="w-3.5 h-3.5 text-silvex-600" />
+            Connect Personal / SMTP Inbox
+          </button>
+
           <button
             onClick={() => handleSendTest()}
             disabled={isSending}
@@ -108,7 +178,7 @@ export default function AdminEmailStudioPage() {
           </button>
 
           <button
-            onClick={fetchLogs}
+            onClick={fetchLogsAndConfig}
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin' : ''}`} />
@@ -120,26 +190,29 @@ export default function AdminEmailStudioPage() {
       {/* Automated Engine Status Card */}
       <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center shrink-0">
             <Server className="w-4 h-4" />
           </div>
           <div>
             <div className="font-bold text-stone-900 dark:text-white flex items-center gap-2">
-              <span>Automated Dispatch Status:</span>
+              <span>Active Dispatch Engine:</span>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Active & Ready (Zero Manual Config Needed)
+                {providerInfo?.activeProvider || 'SMTP Ready'}
               </span>
             </div>
             <div className="text-[11px] text-stone-500">
-              Sender: <span className="font-mono text-stone-700 dark:text-stone-300">Silvex Outdoor Concierge</span> &bull; Engine: <span className="font-medium text-forest-800 dark:text-forest-300">Nodemailer Auto-Provisioned SMTP & Live Web Inbox</span>
+              Sender Address: <span className="font-mono text-stone-700 dark:text-stone-300">{providerInfo?.fromAddress || 'concierge@silvex-outdoor.com'}</span>
             </div>
           </div>
         </div>
 
-        <div className="text-[11px] text-stone-500 bg-stone-50 dark:bg-stone-800/60 px-3 py-2 rounded-xl border border-stone-200/60 dark:border-stone-700/60">
-          All order checkouts, status updates, and trade forms automatically send real formatted emails.
-        </div>
+        <button
+          onClick={() => setShowConfigModal(true)}
+          className="text-[11px] text-forest-800 dark:text-forest-300 font-semibold underline underline-offset-2 hover:text-forest-900 text-left sm:text-right"
+        >
+          Want emails delivered to your personal inbox? Click here to connect Gmail in 30 seconds &rarr;
+        </button>
       </div>
 
       {/* Quick Result Toast */}
@@ -249,11 +322,11 @@ export default function AdminEmailStudioPage() {
 
             <form onSubmit={handleSendTest} className="space-y-3 pt-2">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-stone-700 dark:text-stone-300">Recipient Email</label>
+                <label className="text-xs font-bold text-stone-700 dark:text-stone-300">Recipient Email Address</label>
                 <input
                   type="email"
                   required
-                  placeholder="e.g. client@villa.com"
+                  placeholder="e.g. client@villa.com or your email"
                   value={testEmail}
                   onChange={(e) => setTestEmail(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-950 text-xs text-stone-900 dark:text-white"
@@ -317,7 +390,7 @@ export default function AdminEmailStudioPage() {
           <div>
             <h2 className="text-xs uppercase tracking-widest font-bold text-stone-900 dark:text-white flex items-center gap-2">
               <Clock className="w-4 h-4 text-silvex-600" />
-              Email Dispatch History & Live Web Inboxes
+              Email Dispatch History & Live Inboxes
             </h2>
             <p className="text-xs text-stone-500">
               Click "View Live Web Message" on any row to open the received email directly in your browser.
@@ -359,7 +432,7 @@ export default function AdminEmailStudioPage() {
                     </td>
                     <td className="py-3 px-4">
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                        {log.status === 'SENT' ? 'Sent (SMTP)' : 'Simulated'}
+                        {log.status === 'SENT' ? 'Delivered (SMTP)' : 'Simulated'}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-stone-500 text-[11px]">
@@ -394,6 +467,198 @@ export default function AdminEmailStudioPage() {
           </div>
         )}
       </div>
+
+      {/* Outbound SMTP Setup Modal */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-silvex-600" />
+                <h3 className="font-serif font-bold text-base text-stone-900 dark:text-white">
+                  Connect Personal / Real Inbox
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowConfigModal(false)}
+                className="p-1 text-stone-400 hover:text-stone-600 dark:hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-500">
+              Connect your Gmail account or custom SMTP server to deliver real emails directly into physical customer and personal inboxes.
+            </p>
+
+            <form onSubmit={handleSaveAndVerifyConfig} className="space-y-4 text-xs">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfigProvider('gmail')}
+                  className={`flex-1 py-2 rounded-xl font-bold border transition-colors ${
+                    configProvider === 'gmail'
+                      ? 'border-forest-900 bg-forest-900/10 text-forest-900 dark:text-forest-200'
+                      : 'border-stone-200 dark:border-stone-700'
+                  }`}
+                >
+                  Gmail
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfigProvider('custom_smtp')}
+                  className={`flex-1 py-2 rounded-xl font-bold border transition-colors ${
+                    configProvider === 'custom_smtp'
+                      ? 'border-forest-900 bg-forest-900/10 text-forest-900 dark:text-forest-200'
+                      : 'border-stone-200 dark:border-stone-700'
+                  }`}
+                >
+                  Custom SMTP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfigProvider('resend')}
+                  className={`flex-1 py-2 rounded-xl font-bold border transition-colors ${
+                    configProvider === 'resend'
+                      ? 'border-forest-900 bg-forest-900/10 text-forest-900 dark:text-forest-200'
+                      : 'border-stone-200 dark:border-stone-700'
+                  }`}
+                >
+                  Resend API
+                </button>
+              </div>
+
+              {configProvider === 'gmail' && (
+                <div className="space-y-3 bg-stone-50 dark:bg-stone-950 p-4 rounded-2xl border border-stone-200 dark:border-stone-800">
+                  <div className="space-y-1">
+                    <label className="font-bold text-stone-700 dark:text-stone-300">Your Gmail Address</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="your-email@gmail.com"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-stone-700 dark:text-stone-300">Google 16-Char App Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="xxxx xxxx xxxx xxxx"
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+                    />
+                    <span className="text-[10px] text-stone-500 block">
+                      Generated at Google Account &rarr; Security &rarr; App Passwords.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {configProvider === 'custom_smtp' && (
+                <div className="space-y-3 bg-stone-50 dark:bg-stone-950 p-4 rounded-2xl border border-stone-200 dark:border-stone-800">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2 space-y-1">
+                      <label className="font-bold">SMTP Host</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="smtp.mailprovider.com"
+                        value={smtpHost}
+                        onChange={(e) => setSmtpHost(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border bg-white dark:bg-stone-900"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="font-bold">Port</label>
+                      <input
+                        type="number"
+                        value={smtpPort}
+                        onChange={(e) => setSmtpPort(parseInt(e.target.value, 10))}
+                        className="w-full px-3 py-2 rounded-xl border bg-white dark:bg-stone-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold">SMTP User / API Key</label>
+                    <input
+                      type="text"
+                      required
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border bg-white dark:bg-stone-900"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold">SMTP Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border bg-white dark:bg-stone-900"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {configProvider === 'resend' && (
+                <div className="space-y-3 bg-stone-50 dark:bg-stone-950 p-4 rounded-2xl border border-stone-200 dark:border-stone-800">
+                  <div className="space-y-1">
+                    <label className="font-bold">Resend API Key</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="re_xxxxxxxxxxxx"
+                      value={resendApiKey}
+                      onChange={(e) => setResendApiKey(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border bg-white dark:bg-stone-900"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {configMessage && (
+                <div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{configMessage}</span>
+                </div>
+              )}
+
+              {configError && (
+                <div className="p-3 rounded-xl bg-red-50 text-red-800 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{configError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isVerifyingConfig}
+                className="w-full py-3 rounded-full bg-forest-900 hover:bg-forest-800 text-white font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+              >
+                {isVerifyingConfig ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Connecting & Verifying with Mail Server...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Save & Verify Live Outbound Connection
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal for Raw Inspection */}
       {selectedLogForModal && (

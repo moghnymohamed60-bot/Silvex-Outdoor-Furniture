@@ -66,15 +66,19 @@ async function getAutoTransporter(): Promise<Transporter | null> {
   }
 }
 
+import { getEmailConfig } from './config';
+
 /**
- * Creates Nodemailer Transporter if SMTP credentials are configured in environment
+ * Creates Nodemailer Transporter if SMTP credentials are configured in config or environment
  */
 function createCustomSmtpTransporter() {
-  const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const service = process.env.SMTP_SERVICE; // e.g. 'gmail'
+  const config = getEmailConfig();
+
+  const service = config.smtpService || process.env.SMTP_SERVICE;
+  const host = config.smtpHost || process.env.SMTP_HOST;
+  const port = config.smtpPort || (process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587);
+  const user = config.smtpUser || process.env.SMTP_USER;
+  const pass = config.smtpPass || process.env.SMTP_PASS;
 
   if (service && user && pass) {
     return nodemailer.createTransport({
@@ -97,7 +101,7 @@ function createCustomSmtpTransporter() {
 
 /**
  * Dispatches an email automatically.
- * 1. Uses custom SMTP if configured in .env.local
+ * 1. Uses custom SMTP if configured in .env.local or UI config
  * 2. Uses Resend API if configured
  * 3. Automatically provisions a real SMTP Ethereal test inbox with instant web preview URLs
  */
@@ -121,9 +125,12 @@ export async function sendEmail({
   error?: string;
   provider?: string;
 }> {
+  const config = getEmailConfig();
   const logId = `em_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const fromAddress =
+    config.emailFrom ||
     process.env.EMAIL_FROM ||
+    config.smtpUser ||
     process.env.SMTP_USER ||
     'Silvex Outdoor Furniture <concierge@silvex-outdoor.com>';
 
